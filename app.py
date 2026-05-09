@@ -8,8 +8,9 @@ import altair as alt
 import numpy as np
 import pandas as pd
 import streamlit as st
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 
-EXCEL_NAME = "Sales Invoice Register 2020-2026 Mitesh 260508.xlsx"
+EXCEL_NAME = "df_of_interest.xlsx"
 INVOICE_NO_COL = "Invoice_No."
 INVOICE_DATE_COL = "Invoice Date"
 STANDARD_RATE_COL = "Standard Rate"
@@ -143,6 +144,86 @@ def revenue_by_fy_and_month(path: Path, gstin: str) -> tuple[pd.DataFrame, pd.Da
 
 
 @st.cache_data
+def top_products_lifetime_monthly_revenue(
+    path: Path, gstin: str, top_n: int = 5
+) -> tuple[pd.DataFrame, pd.DataFrame] | None:
+    """Top products by lifetime revenue; one bar per calendar month–year present in data (chronological)."""
+    gst_key = gstin.strip().upper()
+    if not gst_key:
+        return None
+
+    d = gst_subset(path, gst_key)
+    if d.empty:
+        return None
+
+    d = d[d[INVOICE_DATE_COL].notna() & d["FY_Start"].notna()].copy()
+    prod = d[PRODUCT_COL].astype(str).str.strip()
+    d = d[(prod != "") & (prod.str.lower() != "nan")].copy()
+    if d.empty:
+        return None
+
+    top_products = (
+        d.groupby(PRODUCT_COL, observed=True)[AGG_COL]
+        .sum()
+        .reset_index(name="Revenue")
+        .sort_values("Revenue", ascending=False)
+        .head(top_n)
+        .reset_index(drop=True)
+    )
+    if top_products.empty:
+        return None
+
+    top_list = top_products[PRODUCT_COL].tolist()
+    d_top = d[d[PRODUCT_COL].isin(top_list)].copy()
+
+    inv = pd.to_datetime(d_top[INVOICE_DATE_COL], errors="coerce")
+    d_top = d_top.assign(_cal_yr=inv.dt.year, _cal_mo=inv.dt.month)
+    d_top = d_top[d_top["_cal_yr"].notna() & d_top["_cal_mo"].notna()].copy()
+    if d_top.empty:
+        return None
+
+    observed = (
+        d_top.groupby([PRODUCT_COL, "_cal_yr", "_cal_mo"], observed=True)[AGG_COL]
+        .sum()
+        .reset_index(name="Revenue")
+    )
+
+    ym_pairs = (
+        d_top[["_cal_yr", "_cal_mo"]]
+        .drop_duplicates()
+        .sort_values(["_cal_yr", "_cal_mo"])
+        .reset_index(drop=True)
+    )
+    ym_pairs["PeriodOrd"] = ym_pairs["_cal_yr"].astype(np.int64) * 12 + ym_pairs["_cal_mo"].astype(
+        np.int64
+    )
+    ym_pairs["PeriodLabel"] = pd.to_datetime(
+        ym_pairs["_cal_yr"].astype(str) + "-" + ym_pairs["_cal_mo"].astype(str) + "-01",
+        errors="coerce",
+    ).dt.strftime("%b %Y")
+
+    product_keys = pd.DataFrame({PRODUCT_COL: top_list})
+    template = (
+        product_keys.assign(_k=1)
+        .merge(ym_pairs.assign(_k=1), on="_k", how="inner")
+        .drop(columns="_k")
+    )
+
+    monthly_lifetime = (
+        template.merge(
+            observed,
+            on=[PRODUCT_COL, "_cal_yr", "_cal_mo"],
+            how="left",
+        )
+        .sort_values([PRODUCT_COL, "PeriodOrd"])
+        .reset_index(drop=True)
+    )
+    monthly_lifetime["PeriodOrd"] = monthly_lifetime["PeriodOrd"].astype(int)
+
+    return top_products, monthly_lifetime
+
+
+@st.cache_data
 def discount_table_between_fy(
     path: Path,
     gstin: str,
@@ -174,8 +255,8 @@ def discount_table_between_fy(
 
 
 def main() -> None:
-    st.set_page_config(page_title="Customer History Dashboard", layout="centered")
-    st.title("Customer History Dashboard")
+    st.set_page_config(page_title="Sales History", layout="wide")
+    st.title("Sales History")
     st.caption(
         "Financial years are **Apr–Mar** (e.g. FY23-24 = Apr 2023–Mar 2024). "
         "Click an FY bar for month-wise revenue in FY order (Apr → Mar)."
@@ -250,6 +331,7 @@ def main() -> None:
                 "Month:O",
                 sort=alt.SortField("FY_MonthOrd", order="ascending"),
                 title="Month (FY order)",
+                axis=alt.Axis(labelAngle=0),
             ),
             y=alt.Y("Revenue:Q", title="Revenue"),
             tooltip=[
@@ -268,6 +350,52 @@ def main() -> None:
         st.dataframe(fy_totals, use_container_width=True, hide_index=True)
         st.markdown("**Month-wise revenue (within each FY)**")
         st.dataframe(monthly, use_container_width=True, hide_index=True)
+
+    lifetime_top = top_products_lifetime_monthly_revenue(excel_path, gst_key, top_n=5)
+    if lifetime_top is not None:
+        top_products_life, monthly_lifetime = lifetime_top
+        product_order_life = top_products_life[PRODUCT_COL].tolist()
+
+        with st.expander("Top 5 products — lifetime month-wise revenue (charts)", expanded=False):
+            st.caption(
+                "Products ranked by total revenue across all invoices for this customer. "
+                "Each chart uses **every calendar month–year** that appears in this customer’s data for the top 5 products; "
+                "missing product sales in a period show as no bar."
+            )
+            st.dataframe(top_products_life, use_container_width=True, hide_index=True)
+
+            product_charts: list[alt.Chart] = []
+            for product_name in product_order_life:
+                d_prod = monthly_lifetime.loc[monthly_lifetime[PRODUCT_COL] == product_name].copy()
+                ch = (
+                    alt.Chart(d_prod)
+                    .mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3, color="#9467bd")
+                    .encode(
+                        x=alt.X(
+                            "PeriodLabel:O",
+                            sort=alt.SortField("PeriodOrd", order="ascending"),
+                            title="Month–year",
+                            axis=alt.Axis(labelAngle=-45, labelOverlap=False),
+                            scale=alt.Scale(paddingInner=0.1, paddingOuter=0.1),
+                        ),
+                        y=alt.Y("Revenue:Q", title="Revenue"),
+                        tooltip=[
+                            alt.Tooltip("PeriodLabel:O", title="Period"),
+                            alt.Tooltip("Revenue:Q", format=",.2f"),
+                        ],
+                    )
+                    .properties(
+                        height=200,
+                        title=f"{product_name}",
+                    )
+                )
+                product_charts.append(ch)
+
+            if product_charts:
+                combo = product_charts[0]
+                for ch in product_charts[1:]:
+                    combo = combo & ch
+                st.altair_chart(combo, use_container_width=True)
 
     st.markdown("---")
     st.subheader("Discount table by financial year")
@@ -297,7 +425,38 @@ def main() -> None:
         st.warning("No rows found for this GSTIN in the selected FY range.")
         return
 
-    st.dataframe(discount_df, use_container_width=True, hide_index=True)
+    st.caption(
+        f"**{len(discount_df):,}** rows loaded. Columns **start fitted** to the grid width; **drag** a column "
+        "border wider and the grid **scrolls horizontally** when total width exceeds the view. "
+        "Use the **filter row** and column menu for **Starts with** / **Contains** / etc."
+    )
+
+    gb = GridOptionsBuilder.from_dataframe(discount_df)
+    gb.configure_default_column(
+        filter=True,
+        sortable=True,
+        resizable=True,
+        minWidth=90,
+    )
+    gb.configure_grid_options(
+        floatingFilter=True,
+        enableCellTextSelection=True,
+        ensureDomOrder=True,
+        suppressHorizontalScroll=False,
+        autoSizeStrategy={"type": "fitGridWidth", "defaultMinWidth": 90},
+    )
+    gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100)
+    grid_options = gb.build()
+
+    AgGrid(
+        discount_df,
+        gridOptions=grid_options,
+        height=520,
+        theme="streamlit",
+        update_mode=GridUpdateMode.NO_UPDATE,
+        allow_unsafe_jscode=False,
+        key="discount_aggrid",
+    )
 
 
 if __name__ == "__main__":
