@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import altair as alt
 import numpy as np
 import streamlit as st
 
-from sales_register import (
-    EXCEL_NAME,
+from common.sales_register import (
     PRODUCT_COL,
+    default_excel_path,
     monthly_portfolio_metrics,
     top_customers_revenue_share_by_fy,
     top_products_monthly_portfolio,
@@ -25,8 +23,7 @@ def render_data_overview() -> None:
         "**Unique supplier names** counts distinct non-empty `SupplierName` values."
     )
 
-    base = Path(__file__).resolve().parent
-    excel_path = base / EXCEL_NAME
+    excel_path = default_excel_path()
     if not excel_path.is_file():
         st.error(f"Missing data file: `{excel_path}`")
         return

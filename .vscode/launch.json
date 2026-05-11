@@ -2,14 +2,32 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Streamlit: app.py",
+      "name": "Streamlit: app-sales.py",
       "type": "debugpy",
       "request": "launch",
       "module": "streamlit",
       "args": [
         "run",
-        "${workspaceFolder}/app.py",
-        "--server.headless=true"
+        "${workspaceFolder}/app-sales.py",
+        "--server.headless=true",
+        "--server.port",
+        "8501"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Streamlit: app-production.py",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "streamlit",
+      "args": [
+        "run",
+        "${workspaceFolder}/app-production.py",
+        "--server.headless=true",
+        "--server.port",
+        "8502"
       ],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",

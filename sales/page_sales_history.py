@@ -2,21 +2,19 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import altair as alt
 import streamlit as st
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 
-from sales_register import (
+from common.sales_register import (
     AGG_COL,
     CUSTOMER_COL,
-    EXCEL_NAME,
     GST_COL,
     INVOICE_DATE_COL,
     ITEM_CODE_COL,
     PRODUCT_COL,
     columns_of_interest,
+    default_excel_path,
     discount_table_between_fy,
     gst_subset,
     revenue_by_fy_and_month,
@@ -31,8 +29,7 @@ def render_sales_history() -> None:
         "Click an FY bar for month-wise revenue in FY order (Apr → Mar)."
     )
 
-    base = Path(__file__).resolve().parent
-    excel_path = base / EXCEL_NAME
+    excel_path = default_excel_path()
     if not excel_path.is_file():
         st.error(f"Missing data file: `{excel_path}`")
         return

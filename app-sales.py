@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import streamlit as st
 
-from page_data_insights import render_data_overview
-from page_sales_history import render_sales_history
+from sales.page_data_insights import render_data_overview
+from sales.page_sales_history import render_sales_history
 
 st.set_page_config(page_title="Jacktech Sales", layout="wide", page_icon="📊")
 

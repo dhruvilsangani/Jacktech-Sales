@@ -36,6 +36,11 @@ columns_of_interest = [
 ]
 
 
+def default_excel_path() -> Path:
+    """Path to ``df_of_interest.xlsx`` at repository root (sibling of ``common``)."""
+    return Path(__file__).resolve().parent.parent / EXCEL_NAME
+
+
 @st.cache_data(show_spinner="Loading sales register…")
 def load_sales_register(path: Path) -> pd.DataFrame:
     df = pd.read_excel(path)
@@ -255,6 +260,105 @@ def discount_table_between_fy(
 
 def _nunique_dropped_na(s: pd.Series) -> int:
     return int(s.dropna().nunique())
+
+
+def _item_code_match_key(x) -> str:
+    """Normalize item codes for matching (Excel may store codes as int/float or string)."""
+    if x is None:
+        return ""
+    if isinstance(x, str):
+        s = x.strip()
+        if not s or s.lower() in ("nan", "none"):
+            return ""
+    else:
+        if isinstance(x, float) and (np.isnan(x) or not np.isfinite(x)):
+            return ""
+        if isinstance(x, (int, np.integer)):
+            return str(int(x))
+        if isinstance(x, float) and x == int(x):
+            return str(int(x))
+        s = str(x).strip()
+        if not s or s.lower() in ("nan", "none"):
+            return ""
+    try:
+        f = float(s.replace(",", ""))
+        if np.isfinite(f) and f == int(f):
+            return str(int(f))
+    except ValueError:
+        pass
+    return s
+
+
+@st.cache_data(show_spinner="Computing item monthly quantities…")
+def monthly_quantity_by_item_code(path: Path, item_code: str) -> pd.DataFrame | None:
+    """Calendar-month sums of ``Invoice Qty`` for rows whose ``Item_code`` matches ``item_code`` (trimmed / normalized)."""
+    query_key = _item_code_match_key(item_code)
+    if not query_key:
+        return None
+
+    df = load_sales_register(path)
+    if ITEM_CODE_COL not in df.columns or QUANTITY_COL not in df.columns:
+        return None
+
+    ic = df[ITEM_CODE_COL].map(_item_code_match_key)
+    d = df.loc[ic == query_key].copy()
+    if d.empty:
+        return None
+
+    d = d[d[INVOICE_DATE_COL].notna()].copy()
+    if d.empty:
+        return None
+
+    q = pd.to_numeric(d[QUANTITY_COL], errors="coerce").fillna(0)
+    d = d.assign(_qty=q)
+    d["_period"] = d[INVOICE_DATE_COL].dt.to_period("M")
+    out = (
+        d.groupby("_period", observed=False)["_qty"]
+        .sum()
+        .reset_index(name="Quantity")
+    )
+    ts = out["_period"].dt.to_timestamp()
+    out["MonthLabel"] = ts.dt.strftime("%b %Y")
+    out["PeriodOrd"] = (ts.dt.year.astype(np.int64) * 12 + ts.dt.month.astype(np.int64)).astype(int)
+    return out.sort_values("PeriodOrd").reset_index(drop=True)
+
+
+@st.cache_data(show_spinner="Computing item code quantity stats…")
+def item_code_quantity_rank_and_options(path: Path, top_n: int = 5) -> tuple[pd.DataFrame, list[str]]:
+    """Top ``top_n`` rows by total ``Invoice Qty`` (normalized ``Item_code``), plus select order.
+
+    Returns ``(top_df, options)`` where ``top_df`` has ``Item_code`` and ``Quantity`` columns, and
+    ``options`` lists every distinct code with the top ``top_n`` by quantity first, then the rest sorted A–Z.
+    """
+    df = load_sales_register(path)
+    if ITEM_CODE_COL not in df.columns or QUANTITY_COL not in df.columns:
+        return pd.DataFrame(), []
+
+    ic = df[ITEM_CODE_COL].map(_item_code_match_key)
+    d = df.assign(_icode=ic)
+    d = d[d["_icode"] != ""].copy()
+    if d.empty:
+        return pd.DataFrame(), []
+
+    q = pd.to_numeric(d[QUANTITY_COL], errors="coerce").fillna(0)
+    d = d.assign(_qty=q)
+
+    totals = (
+        d.groupby("_icode", observed=True)["_qty"]
+        .sum()
+        .reset_index(name="Quantity")
+        .sort_values("Quantity", ascending=False)
+    )
+    top_df = totals.head(int(top_n)).copy().reset_index(drop=True)
+    top_df = top_df.rename(columns={"_icode": ITEM_CODE_COL})
+
+    top_ids = top_df[ITEM_CODE_COL].tolist()
+    top_set = set(top_ids)
+    all_sorted = sorted(d["_icode"].unique().tolist())
+    rest = [c for c in all_sorted if c not in top_set]
+    options = top_ids + rest
+
+    return top_df, options
 
 
 @st.cache_data(show_spinner="Computing portfolio monthly metrics…")
