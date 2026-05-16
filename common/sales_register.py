@@ -253,7 +253,7 @@ def discount_table_between_fy(
 
     keep_cols = [c for c in columns_of_interest if c in d.columns]
     out = d[keep_cols + ["FY"]].copy()
-    out[INVOICE_DATE_COL] = pd.to_datetime(out[INVOICE_DATE_COL], errors="coerce").dt.date
+    out[INVOICE_DATE_COL] = pd.to_datetime(out[INVOICE_DATE_COL], errors="coerce")
     out[ITEM_CODE_COL] = out[ITEM_CODE_COL].apply(lambda x: "" if pd.isna(x) else str(x))
     return out.sort_values(INVOICE_DATE_COL).reset_index(drop=True)
 
