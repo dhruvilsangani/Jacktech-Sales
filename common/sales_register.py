@@ -39,6 +39,7 @@ columns_of_interest = [
 
 def default_excel_path() -> Path:
     """Path to ``df-sales.xlsx`` at repository root (sibling of ``common``)."""
+    EXCEL_NAME = "df-sales.xlsx"
     return Path(__file__).resolve().parent.parent / EXCEL_NAME
 
 
