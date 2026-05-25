@@ -13,6 +13,7 @@ from common.sales_register import (
     INVOICE_DATE_COL,
     ITEM_CODE_COL,
     PRODUCT_COL,
+    SALES_PERSON_COL,
     columns_of_interest,
     default_excel_path,
     discount_table_between_fy,
@@ -55,8 +56,12 @@ def render_sales_history() -> None:
     fy_totals, monthly = result
 
     cust = gst_subset(excel_path, gst_key)[CUSTOMER_COL].dropna().astype(str)
-    if not cust.empty:
-        st.subheader(cust.mode().iloc[0] if len(cust.mode()) else cust.iloc[0])
+    salesperson = gst_subset(excel_path, gst_key)[SALES_PERSON_COL].dropna().astype(str)
+    header = " · ".join(
+        (s.mode().iloc[0] if len(s.mode()) else s.iloc[0]) for s in (cust, salesperson) if not s.empty
+    )
+    if header:
+        st.subheader(header)
 
     default_fy = fy_totals.sort_values("FY_Start").iloc[-1]["FY"]
 

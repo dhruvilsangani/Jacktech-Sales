@@ -22,6 +22,7 @@ AGG_COL = "Amount"
 PRODUCT_COL = "SubMainGroup"
 GST_COL = "Gst_No"
 CUSTOMER_COL = "SupplierName"
+SALES_PERSON_COL = "Salesperson"
 columns_of_interest = [
     INVOICE_NO_COL,
     INVOICE_DATE_COL,
