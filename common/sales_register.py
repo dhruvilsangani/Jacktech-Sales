@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-EXCEL_NAME = "df_of_interest.xlsx"
+EXCEL_NAME = "df-sales.xlsx"
 INVOICE_NO_COL = "Invoice_No."
 INVOICE_DATE_COL = "Invoice Date"
 STANDARD_RATE_COL = "Standard Rate"
@@ -38,7 +38,7 @@ columns_of_interest = [
 
 
 def default_excel_path() -> Path:
-    """Path to ``df_of_interest.xlsx`` at repository root (sibling of ``common``)."""
+    """Path to ``df-sales.xlsx`` at repository root (sibling of ``common``)."""
     return Path(__file__).resolve().parent.parent / EXCEL_NAME
 
 
