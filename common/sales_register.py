@@ -23,6 +23,9 @@ PRODUCT_COL = "SubMainGroup"
 GST_COL = "Gst_No"
 CUSTOMER_COL = "SupplierName"
 SALES_PERSON_COL = "Salesperson"
+STATE_COL = "State"
+CITY_COL = "City"
+INDUSTRY_TYPE_COL = "Industry_Name"
 columns_of_interest = [
     INVOICE_NO_COL,
     INVOICE_DATE_COL,
@@ -34,6 +37,10 @@ columns_of_interest = [
     DISCOUNT_COL,
     TRANSPORTER_NAME_COL,
     DESTINATION_COL,
+    SALES_PERSON_COL,
+    STATE_COL,
+    CITY_COL,
+    INDUSTRY_TYPE_COL,
 ]
 
 
@@ -455,6 +462,73 @@ def top_customers_revenue_share_by_fy(path: Path, top_n: int = 5) -> pd.DataFram
         g.groupby(["FY", "FY_Start", "Segment"], observed=False)["Revenue"]
         .sum()
         .reset_index()
+    )
+    out = out[out["Revenue"] > 0].reset_index(drop=True)
+    if not out.empty:
+        out["FY_Start"] = out["FY_Start"].astype(int)
+    return out
+
+
+@st.cache_data(show_spinner="Computing state revenue by FY…")
+def state_revenue_by_fy(path: Path) -> pd.DataFrame:
+    """Per FY: revenue summed by ``State``.
+
+    Returns columns ``FY``, ``FY_Start``, ``State``, ``Revenue``.
+    """
+    df = load_sales_register(path)
+    df = df[df[INVOICE_DATE_COL].notna() & df["FY_Start"].notna()].copy()
+    if df.empty:
+        return pd.DataFrame()
+
+    st_col = df[STATE_COL].astype(str).str.strip()
+    st_col = st_col.where(~st_col.str.lower().isin(["", "nan", "none"]), pd.NA)
+    df = df.assign(_state=st_col)
+    df = df[df["_state"].notna()].copy()
+    if df.empty:
+        return pd.DataFrame()
+
+    out = (
+        df.groupby(["FY", "FY_Start", "_state"], observed=True)[AGG_COL]
+        .sum()
+        .reset_index(name="Revenue")
+        .rename(columns={"_state": "State"})
+    )
+    out = out[out["Revenue"] > 0].reset_index(drop=True)
+    if not out.empty:
+        out["FY_Start"] = out["FY_Start"].astype(int)
+    return out
+
+
+@st.cache_data(show_spinner="Computing industry revenue by FY…")
+def industry_revenue_by_fy(path: Path, min_fy_start: int = 2020) -> pd.DataFrame:
+    """Per FY (from ``min_fy_start`` onward): revenue summed by ``Industry_Name``.
+
+    ``min_fy_start=2020`` corresponds to **FY20-21** (Apr 2020 – Mar 2021). Earlier years
+    are omitted because ``Industry_Name`` is largely missing before that.
+
+    Returns columns ``FY``, ``FY_Start``, ``Industry``, ``Revenue``.
+    """
+    df = load_sales_register(path)
+    df = df[
+        df[INVOICE_DATE_COL].notna()
+        & df["FY_Start"].notna()
+        & (df["FY_Start"] >= min_fy_start)
+    ].copy()
+    if df.empty:
+        return pd.DataFrame()
+
+    ind_col = df[INDUSTRY_TYPE_COL].astype(str).str.strip()
+    ind_col = ind_col.where(~ind_col.str.lower().isin(["", "nan", "none"]), pd.NA)
+    df = df.assign(_industry=ind_col)
+    df = df[df["_industry"].notna()].copy()
+    if df.empty:
+        return pd.DataFrame()
+
+    out = (
+        df.groupby(["FY", "FY_Start", "_industry"], observed=True)[AGG_COL]
+        .sum()
+        .reset_index(name="Revenue")
+        .rename(columns={"_industry": "Industry"})
     )
     out = out[out["Revenue"] > 0].reset_index(drop=True)
     if not out.empty:

@@ -9,7 +9,9 @@ import streamlit as st
 from common.sales_register import (
     PRODUCT_COL,
     default_excel_path,
+    industry_revenue_by_fy,
     monthly_portfolio_metrics,
+    state_revenue_by_fy,
     top_customers_revenue_share_by_fy,
     top_products_monthly_portfolio,
 )
@@ -179,6 +181,97 @@ def render_data_overview() -> None:
         st.altair_chart(pie_chart, use_container_width=True)
     else:
         st.warning("No customer-level FY revenue available for the pie chart (check ``SupplierName`` rows).")
+
+    st.subheader("Revenue share — by state (by FY)")
+    st.caption("Each financial year (Apr–Mar): revenue summed by **State** on invoice rows.")
+    state_src = state_revenue_by_fy(excel_path)
+    if not state_src.empty:
+        state_fy_order = state_src.sort_values("FY_Start", ascending=False)["FY"].unique().tolist()
+        sel_state_fy = st.selectbox(
+            "Financial year (state revenue)",
+            state_fy_order,
+            index=0,
+            key="pie_state_fy",
+        )
+        d_state = (
+            state_src.loc[state_src["FY"] == sel_state_fy]
+            .sort_values("Revenue", ascending=False)
+            .copy()
+        )
+
+        state_pie = (
+            alt.Chart(d_state)
+            .mark_arc(innerRadius=48, stroke="#fff", strokeWidth=1)
+            .encode(
+                theta=alt.Theta("Revenue:Q", stack=True),
+                color=alt.Color("State:N", legend=alt.Legend(title="State")),
+                order=alt.Order("Revenue:Q", sort="descending"),
+                tooltip=[
+                    alt.Tooltip("State:N", title="State"),
+                    alt.Tooltip("Revenue:Q", format=",.2f", title="Revenue"),
+                    alt.Tooltip("pct:Q", format=".1f", title="% of FY"),
+                ],
+            )
+            .transform_joinaggregate(total="sum(Revenue)")
+            .transform_calculate(pct="100 * datum.Revenue / datum.total")
+            .properties(
+                width=380,
+                height=380,
+                title=f"FY state revenue mix — {sel_state_fy}",
+            )
+        )
+        st.altair_chart(state_pie, use_container_width=True)
+    else:
+        st.warning("No state-level FY revenue available for the pie chart (check ``State`` rows).")
+
+    st.subheader("Revenue share — by industry (by FY)")
+    st.caption(
+        "Each financial year (Apr–Mar): revenue summed by **Industry_Name**. "
+        "Only **FY20-21 onward** — earlier years lack reliable industry tagging."
+    )
+    industry_src = industry_revenue_by_fy(excel_path, min_fy_start=2020)
+    if not industry_src.empty:
+        industry_fy_order = (
+            industry_src.sort_values("FY_Start", ascending=False)["FY"].unique().tolist()
+        )
+        sel_industry_fy = st.selectbox(
+            "Financial year (industry revenue)",
+            industry_fy_order,
+            index=0,
+            key="pie_industry_fy",
+        )
+        d_industry = (
+            industry_src.loc[industry_src["FY"] == sel_industry_fy]
+            .sort_values("Revenue", ascending=False)
+            .copy()
+        )
+
+        industry_pie = (
+            alt.Chart(d_industry)
+            .mark_arc(innerRadius=48, stroke="#fff", strokeWidth=1)
+            .encode(
+                theta=alt.Theta("Revenue:Q", stack=True),
+                color=alt.Color("Industry:N", legend=alt.Legend(title="Industry")),
+                order=alt.Order("Revenue:Q", sort="descending"),
+                tooltip=[
+                    alt.Tooltip("Industry:N", title="Industry"),
+                    alt.Tooltip("Revenue:Q", format=",.2f", title="Revenue"),
+                    alt.Tooltip("pct:Q", format=".1f", title="% of FY"),
+                ],
+            )
+            .transform_joinaggregate(total="sum(Revenue)")
+            .transform_calculate(pct="100 * datum.Revenue / datum.total")
+            .properties(
+                width=380,
+                height=380,
+                title=f"FY industry revenue mix — {sel_industry_fy}",
+            )
+        )
+        st.altair_chart(industry_pie, use_container_width=True)
+    else:
+        st.warning(
+            "No industry-level FY revenue available for the pie chart (check ``Industry_Name`` rows)."
+        )
 
     with st.expander("Monthly summary table"):
         show = m[
